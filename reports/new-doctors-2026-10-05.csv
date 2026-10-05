@@ -1,0 +1,7 @@
+Doctor,Verdict,Basis,Salesperson,Invoice,Date,Product,Group,Value (PHP)
+Eugenio Laureano Ares,FIRST TIME IN 6 MONTHS,No earlier invoice for this doctor in Zoho,B&B | E. RODRIGUEZ,INV-12842798,2026-10-02,Beltro 25mg,Top 5 Priority,12731.04
+Dr KATHERINE V. HERNANDEZ,FIRST TIME IN 6 MONTHS,No earlier invoice for this doctor in Zoho,B&B | EAST AVE,INV-12842823,2026-10-02,Beltro 50mg,Top 5 Priority,12731.60
+Dr Rosalina Tongol,FIRST TIME IN 6 MONTHS,No earlier invoice for this doctor in Zoho,B&B | NCL,INV-12842827,2026-10-02,Beltro 50mg,Top 5 Priority,12731.60
+Dr. Osias,POSSIBLE MATCH — verify,"Last invoice GPI-SI000002725 on 2026-10-02 as ""Dr. Lucille Osias"" (surname only)",B&B | TAFT,INV-12842837,2026-10-03,Beltro 25mg,Top 5 Priority,6365.52
+Dr.  Tee,POSSIBLE MATCH — verify,"Last invoice INV-12842675 on 2026-09-25 as ""Rico Tee"" (surname only)",B&B | TAFT,INV-12842859,2026-10-05,DanaGet 200MG,Other 5,3600.00
+FRANCIEN BONIFACIA LUMAUAG,FIRST TIME IN 6 MONTHS,"Last invoice INV-12830785 on 2025-04-22 as ""Francien Lumauag""",B&B | TAFT,INV-12842866,2026-10-05,DanaGet 200MG,Other 5,3214.29
