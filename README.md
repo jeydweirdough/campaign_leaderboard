@@ -2,13 +2,13 @@
 
 A leaderboard for GetMEDS / 2MG sales campaigns. Anyone can view the public standings. Admins configure each campaign's rulesets, map teams to Zoho salespersons, validate claims and correct scores.
 
-**Stack:** Next.js 16 (App Router), React 19, Tailwind v4, Drizzle ORM on SQLite/libSQL, Zod, and the Zoho Books API (read-only).
+**Stack:** Next.js 16 (App Router), React 19, Tailwind v4, Drizzle ORM on Neon Postgres, Zod, and the Zoho Books API (read-only).
 
 ## Quick start
 
 ```bash
 npm install
-npm run db:push     # create tables in ./data/leaderboard.db
+npm run db:push     # create/update tables in the Neon database (DATABASE_URL)
 npm run db:seed     # RISE 3.0 (live, Zoho) + Demo League (draft, sample data)
 npm run dev
 ```
@@ -90,6 +90,7 @@ npm test
 
 The app runs anywhere Next.js runs. For Vercel:
 
-- Use a hosted libSQL database (Turso): set `DATABASE_URL=libsql://…` and `DATABASE_AUTH_TOKEN`, then run `npm run db:push`.
+- Set `DATABASE_URL` to the Neon connection string (the same database as `.env.local`, or a separate Neon branch for production). Run `npm run db:push` after any schema change.
+- Set `AUTO_SYNC_MINUTES=0` (Vercel Cron does the syncing there).
 - Add a Vercel Cron job that calls `/api/cron/sync`.
 - Set a strong `ADMIN_PASSWORD` and a random `SESSION_SECRET`.

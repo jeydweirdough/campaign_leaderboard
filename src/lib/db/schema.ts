@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
-import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { boolean, doublePrecision, index, jsonb, pgTable, primaryKey, serial, text } from "drizzle-orm/pg-core";
 
-const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+// Dates are stored as ISO strings (YYYY-MM-DD / full ISO timestamps), matching what Zoho returns
+// and what the scoring engine compares, so no conversion is needed anywhere.
+const now = sql`to_char(now() at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
-export const campaigns = sqliteTable("campaigns", {
+export const campaigns = pgTable("campaigns", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
@@ -12,7 +14,7 @@ export const campaigns = sqliteTable("campaigns", {
   endDate: text("end_date").notNull(), // YYYY-MM-DD inclusive
   /** draft = admin only, live = public, closed = public + frozen sync */
   status: text("status", { enum: ["draft", "live", "closed"] }).notNull().default("draft"),
-  ruleset: text("ruleset", { mode: "json" }).notNull(),
+  ruleset: jsonb("ruleset").notNull(),
   /** zoho = live Zoho Books data, demo = generated sample data */
   dataSource: text("data_source", { enum: ["zoho", "demo"] }).notNull().default("zoho"),
   lastSyncedAt: text("last_synced_at"),
@@ -20,40 +22,48 @@ export const campaigns = sqliteTable("campaigns", {
   updatedAt: text("updated_at").notNull().default(now),
 });
 
-export const teams = sqliteTable("teams", {
-  id: text("id").primaryKey(),
-  campaignId: text("campaign_id")
-    .notNull()
-    .references(() => campaigns.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  chcName: text("chc_name").notNull().default(""),
-  mdName: text("md_name").notNull().default(""),
-  region: text("region").notNull().default(""),
-  /** Zoho salesperson_ids whose invoices count for this team. */
-  salespersonIds: text("salesperson_ids", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
-  createdAt: text("created_at").notNull().default(now),
-});
+export const teams = pgTable(
+  "teams",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    chcName: text("chc_name").notNull().default(""),
+    mdName: text("md_name").notNull().default(""),
+    region: text("region").notNull().default(""),
+    /** Zoho salesperson_ids whose invoices count for this team. */
+    salespersonIds: jsonb("salesperson_ids").$type<string[]>().notNull().default([]),
+    createdAt: text("created_at").notNull().default(now),
+  },
+  (t) => [index("teams_campaign_idx").on(t.campaignId)],
+);
 
 /** Cached Zoho invoices (only those containing at least one focus product). */
-export const invoices = sqliteTable("invoices", {
-  id: text("id").primaryKey(), // zoho invoice_id
-  number: text("number").notNull(),
-  date: text("date").notNull(),
-  status: text("status").notNull(),
-  customerId: text("customer_id").notNull(),
-  customerName: text("customer_name").notNull(),
-  salespersonId: text("salesperson_id").notNull().default(""),
-  salespersonName: text("salesperson_name").notNull().default(""),
-  doctorName: text("doctor_name").notNull().default(""),
-  source: text("source").notNull().default(""),
-  total: real("total").notNull(),
-  lines: text("lines", { mode: "json" }).$type<{ itemId: string; name: string; amount: number }[]>().notNull(),
-  lastModified: text("last_modified").notNull(),
-  fetchedAt: text("fetched_at").notNull().default(now),
-});
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: text("id").primaryKey(), // zoho invoice_id
+    number: text("number").notNull(),
+    date: text("date").notNull(),
+    status: text("status").notNull(),
+    customerId: text("customer_id").notNull(),
+    customerName: text("customer_name").notNull(),
+    salespersonId: text("salesperson_id").notNull().default(""),
+    salespersonName: text("salesperson_name").notNull().default(""),
+    doctorName: text("doctor_name").notNull().default(""),
+    source: text("source").notNull().default(""),
+    total: doublePrecision("total").notNull(),
+    lines: jsonb("lines").$type<{ itemId: string; name: string; amount: number }[]>().notNull(),
+    lastModified: text("last_modified").notNull(),
+    fetchedAt: text("fetched_at").notNull().default(now),
+  },
+  (t) => [index("invoices_date_idx").on(t.date)],
+);
 
 /** Most recent Zoho invoice for a doctor before a given date (for New / Reactivation). */
-export const doctorHistory = sqliteTable(
+export const doctorHistory = pgTable(
   "doctor_history",
   {
     campaignId: text("campaign_id")
@@ -73,7 +83,7 @@ export const doctorHistory = sqliteTable(
 );
 
 /** Most recent Zoho invoice to a customer (hospital) before its first qualifying order. */
-export const customerHistory = sqliteTable(
+export const customerHistory = pgTable(
   "customer_history",
   {
     campaignId: text("campaign_id")
@@ -89,7 +99,7 @@ export const customerHistory = sqliteTable(
   (t) => [primaryKey({ columns: [t.campaignId, t.customerId] })],
 );
 
-export const claims = sqliteTable("claims", {
+export const claims = pgTable("claims", {
   id: text("id").primaryKey(),
   campaignId: text("campaign_id")
     .notNull()
@@ -107,7 +117,7 @@ export const claims = sqliteTable("claims", {
   createdAt: text("created_at").notNull().default(now),
 });
 
-export const adjustments = sqliteTable("adjustments", {
+export const adjustments = pgTable("adjustments", {
   id: text("id").primaryKey(),
   campaignId: text("campaign_id")
     .notNull()
@@ -116,13 +126,13 @@ export const adjustments = sqliteTable("adjustments", {
     .notNull()
     .references(() => teams.id, { onDelete: "cascade" }),
   missionId: text("mission_id"),
-  points: integer("points").notNull(),
+  points: doublePrecision("points").notNull(),
   reason: text("reason").notNull(),
   createdAt: text("created_at").notNull().default(now),
 });
 
 /** Invoices management has ruled out (cancelled, split, duplicate…). */
-export const exclusions = sqliteTable(
+export const exclusions = pgTable(
   "exclusions",
   {
     campaignId: text("campaign_id")
@@ -135,11 +145,11 @@ export const exclusions = sqliteTable(
   (t) => [primaryKey({ columns: [t.campaignId, t.invoiceId] })],
 );
 
-export const syncLogs = sqliteTable("sync_logs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const syncLogs = pgTable("sync_logs", {
+  id: serial("id").primaryKey(),
   campaignId: text("campaign_id").notNull(),
   startedAt: text("started_at").notNull(),
   finishedAt: text("finished_at"),
-  ok: integer("ok", { mode: "boolean" }).notNull().default(false),
+  ok: boolean("ok").notNull().default(false),
   summary: text("summary").notNull().default(""),
 });

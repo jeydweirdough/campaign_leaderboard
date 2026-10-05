@@ -4,18 +4,15 @@
  *  - "Demo League" — generated sample data for September 2026 so the UI can be explored.
  * Safe to re-run: existing slugs are left untouched.
  */
-import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/lib/db/schema";
 import { RISE_3_RULESET } from "../src/lib/rules/presets";
 import { DEMO_SALESPERSONS, demoSource } from "../src/lib/zoho/demo";
 import { doctorKey } from "../src/lib/rules/engine";
 
-const db = drizzle(
-  createClient({ url: process.env.DATABASE_URL ?? "file:./data/leaderboard.db", authToken: process.env.DATABASE_AUTH_TOKEN }),
-  { schema },
-);
+const db = drizzle(neon(process.env.DATABASE_URL!), { schema });
 
 async function ensureCampaign(values: typeof schema.campaigns.$inferInsert) {
   const existing = await db.query.campaigns.findFirst({ where: eq(schema.campaigns.slug, values.slug) });
