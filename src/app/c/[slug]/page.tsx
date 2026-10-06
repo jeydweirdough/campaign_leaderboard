@@ -103,7 +103,7 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
             <Link
               key={s.team.id}
               href={`/c/${slug}/t/${s.team.id}`}
-              className={`panel rise-in relative block w-[85%] shrink-0 snap-center p-4 transition sm:p-5 md:w-auto ${first ? "md:col-span-2 lg:col-span-1" : ""} hover:-translate-y-0.5 ${first ? "border-2 border-gold/80" : "border border-transparent hover:border-line"}`}
+              className={`panel rise-in relative block w-[85%] min-w-0 shrink-0 snap-center p-4 transition sm:p-5 md:w-auto ${first ? "md:col-span-2 lg:col-span-1" : ""} hover:-translate-y-0.5 ${first ? "border-2 border-gold/80" : "border border-transparent hover:border-line"}`}
               style={{ animationDelay: `${i * 60}ms` }}
             >
               {first && (
