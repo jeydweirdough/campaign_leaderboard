@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Activity, Award, Building2, Flame, Gift, Stethoscope, Star, Users, type LucideIcon } from "lucide-react";
-import { getCampaignBySlug, scoreCampaign } from "@/lib/score";
+import { getCampaignBySlug, previousRanks, scoreCampaign } from "@/lib/score";
 import { isAdmin } from "@/lib/admin";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { Countdown } from "@/components/countdown";
@@ -13,7 +13,7 @@ import { publicBaseUrl } from "@/lib/public-url";
 import { TeamAvatar } from "@/components/team-avatar";
 import { RankingBoard } from "./ranking-board";
 import { RecentPlays } from "./recent-plays";
-import { daysLeft, fmtRange, manilaToday, num, peso, pesoCompact, timeAgo } from "@/lib/format";
+import { daysLeft, fmtRange, num, peso, pesoCompact, timeAgo } from "@/lib/format";
 import { RULE_TYPE_LABELS, type Rule, type Ruleset } from "@/lib/rules/schema";
 import type { ScoreResult, TeamScore } from "@/lib/rules/engine";
 
@@ -37,14 +37,7 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
   if (campaign.status === "draft" && !(await isAdmin())) notFound();
 
   // Yesterday's standings (Manila calendar) give the ▲▼ movement in the ranking table.
-  const today = manilaToday();
-  const lastDay = today < campaign.endDate ? today : campaign.endDate;
-  const yesterday = new Date(Date.parse(lastDay) - 86_400_000).toISOString().slice(0, 10);
-  const [{ ruleset, result }, previous] = await Promise.all([
-    scoreCampaign(campaign),
-    yesterday >= campaign.startDate ? scoreCampaign(campaign, yesterday) : null,
-  ]);
-  const prevRank = new Map(previous?.result.teams.map((t) => [t.team.id, t.rank]));
+  const [{ ruleset, result }, prevRank] = await Promise.all([scoreCampaign(campaign), previousRanks(campaign)]);
   const left = daysLeft(campaign.endDate);
   const pageUrl = `${await publicBaseUrl()}/c/${slug}`;
   const scoring = result.teams.filter((t) => t.total > 0).length;
@@ -54,6 +47,7 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
   return (
     <PublicShell
       active="leaderboard"
+      background={campaign.backgroundImage}
       slug={slug}
       topRight={
         <>

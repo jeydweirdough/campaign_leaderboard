@@ -30,7 +30,7 @@ async function main() {
     id: crypto.randomUUID(),
     slug: "rise-3",
     name: "RISE Challenge 3.0",
-    tagline: "The Rx Impact League — 10 focus products · 3 missions · 1 champion",
+    tagline: "Reignite · Inspire · Succeed · Excel — The Rx Impact League",
     startDate: "2026-10-01",
     endDate: "2026-10-31",
     status: "live",

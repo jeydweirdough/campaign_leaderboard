@@ -10,11 +10,14 @@ export function PublicShell({
   active,
   slug,
   topRight,
+  background,
 }: {
   children: React.ReactNode;
   active: NavKey;
   slug?: string;
   topRight?: React.ReactNode;
+  /** Campaign artwork (path under /public or URL) shown behind the page. */
+  background?: string | null;
 }) {
   const items: { key: NavKey; href: string; label: string; icon: typeof Trophy }[] = [
     { key: "campaigns", href: "/", label: "All campaigns", icon: LayoutGrid },
@@ -27,7 +30,14 @@ export function PublicShell({
   ];
 
   return (
-    <div className="flex min-h-screen flex-1">
+    <div className={`relative isolate flex min-h-screen flex-1 ${background ? "has-art" : ""}`}>
+      {background && (
+        <div
+          aria-hidden
+          className="campaign-art pointer-events-none fixed inset-0 -z-10"
+          style={{ "--art-image": `url("${background}")` } as React.CSSProperties}
+        />
+      )}
       <aside className="sticky top-0 hidden h-screen w-[72px] shrink-0 flex-col items-center bg-sidebar py-6 sm:flex">
         <Link href="/" aria-label="Home" className="text-accent">
           <Zap className="h-8 w-8" strokeWidth={2.5} />

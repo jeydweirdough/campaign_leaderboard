@@ -172,3 +172,26 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .rise-in, .flash-row { animation: none; }
 }
+
+/* Campaign artwork behind the public pages (set per campaign in Admin → Settings). */
+:root {
+  --art-overlay: linear-gradient(180deg, rgb(15 17 20 / 0.9), rgb(22 24 27 / 0.78) 30%, rgb(22 24 27 / 0.86) 70%, rgb(15 17 20 / 0.95));
+}
+:root[data-theme="light"] {
+  --art-overlay: linear-gradient(180deg, rgb(243 244 246 / 0.9), rgb(243 244 246 / 0.78) 30%, rgb(243 244 246 / 0.86) 70%, rgb(243 244 246 / 0.95));
+}
+.campaign-art {
+  background-image: var(--art-overlay), var(--art-image);
+  background-size: cover;
+  background-position: center 35%;
+}
+/* Cards turn slightly see-through so the artwork shows behind them. */
+.has-art .panel {
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.has-art aside {
+  background: color-mix(in srgb, var(--sidebar) 80%, transparent);
+  backdrop-filter: blur(12px);
+}

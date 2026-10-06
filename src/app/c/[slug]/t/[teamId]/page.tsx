@@ -36,7 +36,7 @@ export default async function TeamPage({ params }: PageProps<"/c/[slug]/t/[teamI
   const salespersons = score.team.salespersonIds.map((id) => spRows.find((r) => r.id === id)?.name || id);
 
   return (
-    <PublicShell active="leaderboard" slug={slug}>
+    <PublicShell active="leaderboard" slug={slug} background={campaign.backgroundImage}>
       <AutoRefresh seconds={60} />
       <Link href={`/c/${slug}`} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-text">
         <ArrowLeft className="h-4 w-4" /> Leaderboard

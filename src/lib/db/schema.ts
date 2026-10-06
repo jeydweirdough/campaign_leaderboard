@@ -17,6 +17,8 @@ export const campaigns = pgTable("campaigns", {
   ruleset: jsonb("ruleset").notNull(),
   /** zoho = live Zoho Books data, demo = generated sample data */
   dataSource: text("data_source", { enum: ["zoho", "demo"] }).notNull().default("zoho"),
+  /** Artwork behind the public pages and share image: a path under /public (e.g. /campaigns/rise-3-bg.jpg) or a full URL. */
+  backgroundImage: text("background_image"),
   lastSyncedAt: text("last_synced_at"),
   createdAt: text("created_at").notNull().default(now),
   updatedAt: text("updated_at").notNull().default(now),

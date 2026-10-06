@@ -4,6 +4,7 @@ import { db, schema } from "@/lib/db";
 import { computeScores, type ScoreResult } from "@/lib/rules/engine";
 import { doctorNameKey } from "@/lib/rules/doctor-match";
 import { parseRuleset, type Ruleset } from "@/lib/rules/schema";
+import { manilaToday } from "@/lib/format";
 
 export type Campaign = typeof schema.campaigns.$inferSelect;
 
@@ -69,4 +70,14 @@ export async function scoreCampaign(campaign: Campaign, asOf?: string): Promise<
     ),
   });
   return { ruleset, result };
+}
+
+/** Each team's rank at the end of yesterday (Asia/Manila), for ▲▼ movement. Empty on the first day. */
+export async function previousRanks(campaign: Campaign): Promise<Map<string, number>> {
+  const today = manilaToday();
+  const lastDay = today < campaign.endDate ? today : campaign.endDate;
+  const yesterday = new Date(Date.parse(lastDay) - 86_400_000).toISOString().slice(0, 10);
+  if (yesterday < campaign.startDate) return new Map();
+  const { result } = await scoreCampaign(campaign, yesterday);
+  return new Map(result.teams.map((t) => [t.team.id, t.rank]));
 }
