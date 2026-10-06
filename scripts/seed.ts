@@ -81,7 +81,8 @@ async function main() {
     }
   }
   for (const [key, { date, name }] of firstByDoctor) {
-    const last = await demoSource.lastDoctorInvoiceBefore(name, date, ruleset.zoho);
+    const hits = await demoSource.doctorCandidatesBefore(name, date, ruleset.zoho);
+    const last = hits[0] ? { date: hits[0].date, number: hits[0].number } : null;
     await db.insert(schema.doctorHistory).values({
       campaignId: demoId, doctorKey: key, doctorName: name, checkedBefore: date, lastInvoiceDate: last?.date ?? null, lastInvoiceNumber: last?.number ?? null,
     });

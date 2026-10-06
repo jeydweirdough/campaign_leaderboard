@@ -1,7 +1,7 @@
 import "server-only";
 import type { InvoiceFact } from "@/lib/rules/engine";
 import { getInvoice, listInvoices, findInvoice, findItemsByName, type ZohoInvoiceDetail } from "./client";
-import { compareDoctors, surnameCasings } from "@/lib/rules/doctor-match";
+import { compareDoctors, doctorNameKey, surnameCasings } from "@/lib/rules/doctor-match";
 import { demoSource } from "./demo";
 
 /** Where invoice facts come from. Live Zoho Books, or generated demo data. */
@@ -11,18 +11,34 @@ export type InvoiceSource = {
   /** Invoice ids + last-modified stamps containing any of these items in the date range. */
   listFocusInvoices(itemIds: string[], start: string, end: string): Promise<{ id: string; lastModified: string; status: string }[]>;
   getInvoice(id: string, fields: { doctorField: string; sourceField: string }): Promise<InvoiceFact & { lastModified: string }>;
-  /** Most recent non-void invoice for this doctor strictly before `date`. */
-  lastDoctorInvoiceBefore(
+  /**
+   * Earlier invoices (strictly before `date`) whose doctor field is this doctor or a likely spelling
+   * variant — newest per spelling. Decide which ones count with `pickLastInvoice`.
+   */
+  doctorCandidatesBefore(
     doctorName: string,
     date: string,
     fields: { doctorField: string; excludedStatuses: string[] },
-  ): Promise<DoctorHistoryHit | null>;
+  ): Promise<DoctorHistoryHit[]>;
   /** Most recent non-excluded invoice to this customer strictly before `date`. */
   lastCustomerInvoiceBefore(customerId: string, date: string, excludedStatuses: string[]): Promise<{ date: string; number: string } | null>;
 };
 
-/** An earlier invoice for the doctor; matchedName shows which spelling matched. */
-export type DoctorHistoryHit = { date: string; number: string; matchedName: string; confidence: "exact" | "same" | "possible" };
+/** An earlier invoice for the doctor; matchedName shows which spelling matched and why. */
+export type DoctorHistoryHit = {
+  date: string;
+  number: string;
+  matchedName: string;
+  key: string;
+  confidence: "exact" | "same" | "possible";
+  reason?: string;
+};
+
+/** Default reading without admin input: newest exact/same match, else (conservatively) the newest possible one. */
+export function pickLastInvoice(hits: DoctorHistoryHit[]): DoctorHistoryHit | null {
+  const byDate = [...hits].sort((a, b) => b.date.localeCompare(a.date));
+  return byDate.find((h) => h.confidence !== "possible") ?? byDate[0] ?? null;
+}
 
 export function toFact(inv: ZohoInvoiceDetail, fields: { doctorField: string; sourceField: string }) {
   const cf = inv.custom_field_hash ?? {};
@@ -59,38 +75,40 @@ const zohoSource: InvoiceSource = {
   async getInvoice(id, fields) {
     return toFact(await getInvoice(id), fields);
   },
-  async lastDoctorInvoiceBefore(doctorName, date, fields) {
-    const excluded = new Set(fields.excludedStatuses.map((s) => s.toLowerCase()));
+  async doctorCandidatesBefore(doctorName, date, fields) {
+    const excluded = new Set(fields.excludedStatuses.map((x) => x.toLowerCase()));
     const doctorOf = (r: { custom_field_hash?: Record<string, string> }) => (r.custom_field_hash?.[fields.doctorField] ?? "").trim();
     const valid = (r: { status: string }) => !excluded.has(r.status.toLowerCase());
-    const candidates: DoctorHistoryHit[] = [];
+    const ownKey = doctorNameKey(doctorName);
+    const hits = new Map<string, DoctorHistoryHit>(); // newest invoice per spelling key
 
-    // 1. Exact spelling (`custom_field` matches any custom field, so re-check the doctor field).
-    const want = doctorName.trim().toLowerCase();
-    const exact = await findInvoice(
-      { custom_field: doctorName, date_before: date, sort_column: "date", sort_order: "D" },
-      (r) => valid(r) && doctorOf(r).toLowerCase() === want,
-    );
-    if (exact) candidates.push({ date: exact.date, number: exact.invoice_number, matchedName: doctorOf(exact), confidence: "exact" });
+    const consider = (r: { date: string; invoice_number: string; status: string; custom_field_hash?: Record<string, string> }) => {
+      if (!valid(r)) return null;
+      const name = doctorOf(r);
+      const key = doctorNameKey(name);
+      if (!key) return null;
+      if (key === ownKey) {
+        if (!hits.has(key)) hits.set(key, { date: r.date, number: r.invoice_number, matchedName: name, key, confidence: "exact" });
+        return "exact";
+      }
+      const cmp = compareDoctors(doctorName, name);
+      if (!cmp) return null;
+      if (!hits.has(key)) hits.set(key, { date: r.date, number: r.invoice_number, matchedName: name, key, confidence: cmp.level, reason: cmp.reason });
+      return cmp.level;
+    };
 
-    // 2. Spelling variants: same surname, compatible first name ("Dr. Audie V. Cuntapay" = "Audie Cuntapay").
-    //    One pass per casing: stop at the newest confirmed match, remembering the newest surname-only one on the way.
+    // 1. Exact spelling. `custom_field` matches any custom field, so `consider` re-checks the doctor field.
+    await findInvoice({ custom_field: doctorName, date_before: date, sort_column: "date", sort_order: "D" }, (r) => consider(r) === "exact");
+
+    // 2. Spelling variants via the surname (Zoho's contains-search is case-sensitive, so try common casings).
+    //    Newest first; stop once a confident match is found, keeping every spelling seen on the way.
     for (const casing of surnameCasings(doctorName)) {
-      let possible: (typeof candidates)[number] | null = null;
-      const same = await findInvoice({ custom_field_contains: casing, date_before: date, sort_column: "date", sort_order: "D" }, (r) => {
-        if (!valid(r)) return false;
-        const level = compareDoctors(doctorName, doctorOf(r));
-        if (level === "possible" && !possible) possible = { date: r.date, number: r.invoice_number, matchedName: doctorOf(r), confidence: "possible" };
+      await findInvoice({ custom_field_contains: casing, date_before: date, sort_column: "date", sort_order: "D" }, (r) => {
+        const level = consider(r);
         return level === "same";
       });
-      if (same) candidates.push({ date: same.date, number: same.invoice_number, matchedName: doctorOf(same), confidence: "same" });
-      if (possible) candidates.push(possible);
     }
-
-    // Most recent confirmed match wins; a surname-only match counts (conservatively) only if nothing else exists.
-    const confirmed = candidates.filter((c) => c.confidence !== "possible").sort((a, b) => b.date.localeCompare(a.date));
-    if (confirmed.length) return confirmed[0];
-    return candidates.sort((a, b) => b.date.localeCompare(a.date))[0] ?? null;
+    return [...hits.values()];
   },
   async lastCustomerInvoiceBefore(customerId, date, excludedStatuses) {
     const excluded = new Set(excludedStatuses.map((s) => s.toLowerCase()));

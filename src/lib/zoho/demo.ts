@@ -1,6 +1,7 @@
 import type { InvoiceFact } from "@/lib/rules/engine";
 import type { InvoiceSource } from "./source";
 import { addMonths } from "@/lib/rules/engine";
+import { doctorNameKey } from "@/lib/rules/doctor-match";
 
 /**
  * Deterministic fake Zoho data so the leaderboard can be explored without
@@ -117,10 +118,11 @@ export const demoSource: InvoiceSource = {
     // Half the demo hospitals are "new" (nothing in the last 6 months).
     return hash(customerId) % 2 ? null : { date: addMonths(date, -2), number: "DEMO-HIST" };
   },
-  async lastDoctorInvoiceBefore(doctorName, date) {
+  async doctorCandidatesBefore(doctorName, date) {
     const h = hash(doctorName) % 10;
-    if (h < 3) return null; // brand-new doctor
-    if (h < 5) return { date: addMonths(date, -(7 + (h % 4))), number: "DEMO-HIST", matchedName: doctorName, confidence: "exact" }; // dormant 7+ months
-    return { date: addMonths(date, -1), number: "DEMO-HIST", matchedName: doctorName, confidence: "exact" };
+    const key = doctorNameKey(doctorName);
+    if (h < 3) return []; // brand-new doctor
+    const months = h < 5 ? -(7 + (h % 4)) : -1; // dormant 7+ months, or recent
+    return [{ date: addMonths(date, months), number: "DEMO-HIST", matchedName: doctorName, key, confidence: "exact" as const }];
   },
 };

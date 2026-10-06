@@ -77,9 +77,44 @@ export const doctorHistory = pgTable(
     /** The doctor-field spelling on that invoice, and how it was matched (exact / same / possible). */
     matchedName: text("matched_name"),
     matchConfidence: text("match_confidence"),
+    /** Every earlier-invoice match found (exact + spelling variants), so admin decisions can re-pick. */
+    candidates: jsonb("candidates").$type<DoctorCandidate[]>().notNull().default([]),
     checkedAt: text("checked_at").notNull().default(now),
   },
   (t) => [primaryKey({ columns: [t.campaignId, t.doctorKey] })],
+);
+
+export type DoctorCandidate = {
+  name: string;
+  key: string;
+  date: string;
+  number: string;
+  confidence: "exact" | "same" | "possible";
+  reason?: string;
+};
+
+/**
+ * Two doctor-name spellings that may be the same person, plus the admin's verdict.
+ * Global (not per campaign): "Audie Cuntapay" = "Dr. Audie V. Cuntapay" is true everywhere.
+ */
+export const doctorMatches = pgTable(
+  "doctor_matches",
+  {
+    keyA: text("key_a").notNull(), // keyA < keyB
+    keyB: text("key_b").notNull(),
+    nameA: text("name_a").notNull(),
+    nameB: text("name_b").notNull(),
+    /** What the matcher thinks: same = applied automatically, possible = held for review. */
+    level: text("level", { enum: ["same", "possible"] }).notNull(),
+    reason: text("reason").notNull().default(""),
+    decision: text("decision", { enum: ["pending", "same", "different"] }).notNull().default("pending"),
+    /** Example invoices for each spelling, to help the reviewer. */
+    evidence: jsonb("evidence").$type<{ a?: { number: string; date: string }; b?: { number: string; date: string } }>().notNull().default({}),
+    campaignId: text("campaign_id"),
+    createdAt: text("created_at").notNull().default(now),
+    decidedAt: text("decided_at"),
+  },
+  (t) => [primaryKey({ columns: [t.keyA, t.keyB] })],
 );
 
 /** Most recent Zoho invoice to a customer (hospital) before its first qualifying order. */

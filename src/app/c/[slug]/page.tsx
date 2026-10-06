@@ -8,6 +8,8 @@ import { AutoRefresh } from "@/components/auto-refresh";
 import { Countdown } from "@/components/countdown";
 import { Medal } from "@/components/medal";
 import { PublicShell } from "@/components/public-shell";
+import { ShareButton } from "@/components/share-button";
+import { publicBaseUrl } from "@/lib/public-url";
 import { TeamAvatar } from "@/components/team-avatar";
 import { RankingBoard } from "./ranking-board";
 import { RecentPlays } from "./recent-plays";
@@ -44,6 +46,7 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
   ]);
   const prevRank = new Map(previous?.result.teams.map((t) => [t.team.id, t.rank]));
   const left = daysLeft(campaign.endDate);
+  const pageUrl = `${await publicBaseUrl()}/c/${slug}`;
   const scoring = result.teams.filter((t) => t.total > 0).length;
   const prizePlaces = ruleset.awards.filter((a) => a.basis.kind === "overall_rank").length;
   const podium = result.teams.slice(0, 3);
@@ -54,6 +57,7 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
       slug={slug}
       topRight={
         <>
+          <ShareButton slug={slug} pageUrl={pageUrl} />
           <span className="hidden text-xs text-muted sm:inline">Updated {timeAgo(campaign.lastSyncedAt)}</span>
           <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${left >= 0 && campaign.status === "live" ? "bg-accent-soft text-accent" : "bg-surface text-muted"}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${left >= 0 && campaign.status === "live" ? "animate-pulse bg-accent" : "bg-muted"}`} />

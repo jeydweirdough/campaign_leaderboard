@@ -10,7 +10,7 @@ import { and, eq, gte, lte } from "drizzle-orm";
 import { db, schema } from "../src/lib/db";
 import { parseRuleset } from "../src/lib/rules/schema";
 import { addMonths, doctorKey } from "../src/lib/rules/engine";
-import { sourceFor, type DoctorHistoryHit } from "../src/lib/zoho/source";
+import { pickLastInvoice, sourceFor, type DoctorHistoryHit } from "../src/lib/zoho/source";
 
 const START = "2026-10-01";
 const END = "2026-10-31";
@@ -48,7 +48,7 @@ async function main() {
   for (const d of doctors.values()) {
     let last: DoctorHistoryHit | null = null;
     for (const name of d.names) {
-      const hit = await zoho.lastDoctorInvoiceBefore(name, d.first, rs.zoho);
+      const hit = pickLastInvoice(await zoho.doctorCandidatesBefore(name, d.first, rs.zoho));
       if (hit && (!last || hit.date > last.date || (last.confidence === "possible" && hit.confidence !== "possible"))) last = hit;
     }
     const cutoff = addMonths(d.first, -6);

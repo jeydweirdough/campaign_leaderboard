@@ -147,3 +147,34 @@ test("addMonths clamps to month end", () => {
   assert.equal(addMonths("2026-03-31", 6), "2026-09-30");
   assert.equal(addMonths("2026-10-15", -7), "2026-03-15");
 });
+
+test("admin decisions on doctor-name matches change New Doctor points", () => {
+  const order = inv({ doctorName: "Dr. Osias", lines: [{ ...PAZO, amount: 6_000 }] });
+  const base = {
+    doctorCandidates: new Map([["osias", [{ name: "Dr. Lucille Osias", key: "lucille osias", date: "2026-09-30", number: "INV-L", confidence: "possible" as const }]]]),
+  };
+  const history: [string, string | null][] = [["osias", "2026-09-30"]];
+  // Unreviewed "possible" match: treated as seen (no points) and flagged for review.
+  const pending = run([order], history, { ...base, doctorMatches: [{ keyA: "lucille osias", keyB: "osias", level: "possible", decision: "pending" }] });
+  assert.equal(pts(pending, "new-doctor"), 0);
+  assert.deepEqual(pending.warnings.doctorsPendingReview, ["Dr. Osias"]);
+  // Admin says it's a different doctor: no earlier invoice remains → New Doctor.
+  const different = run([order], history, { ...base, doctorMatches: [{ keyA: "lucille osias", keyB: "osias", level: "possible", decision: "different" }] });
+  assert.equal(pts(different, "new-doctor"), 10);
+  // Admin confirms same doctor: not new, no longer pending.
+  const same = run([order], history, { ...base, doctorMatches: [{ keyA: "lucille osias", keyB: "osias", level: "possible", decision: "same" }] });
+  assert.equal(pts(same, "new-doctor"), 0);
+  assert.deepEqual(same.warnings.doctorsPendingReview, []);
+});
+
+test("two spellings of one doctor in the campaign are merged once confirmed", () => {
+  const a = inv({ date: "2026-10-02", doctorName: "Dr. Lucille Osias", lines: [{ ...PAZO, amount: 6_000 }] });
+  const b = inv({ date: "2026-10-03", doctorName: "Dr. Osias", lines: [{ ...PAZO, amount: 6_000 }] });
+  const history: [string, string | null][] = [["lucille osias", null], ["osias", null]];
+  const candidates = { doctorCandidates: new Map([["lucille osias", []], ["osias", []]]) };
+  const apart = run([a, b], history, candidates);
+  assert.equal(apart.teams[0].byRule["new-doctor"].count, 2, "unmerged: counted as two new doctors");
+  const merged = run([a, b], history, { ...candidates, doctorMatches: [{ keyA: "lucille osias", keyB: "osias", level: "possible", decision: "same" }] });
+  assert.equal(merged.teams[0].byRule["new-doctor"].count, 1, "merged: one new doctor");
+  assert.equal(pts(merged, "repeat-doctor"), 5, "…and the second order is a Back-to-Back Bucket");
+});

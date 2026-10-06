@@ -140,7 +140,7 @@ function EventDetail({ event: e, reveal }: { event: ScoreEvent; reveal: boolean 
                 {b.history.matchedName && b.history.confidence !== "exact" && (
                   <>
                     {" "}— matched as &ldquo;{reveal ? b.history.matchedName : doctorLabel(b.history.matchedName, false)}&rdquo;
-                    {b.history.confidence === "possible" && <span className="text-accent"> (surname only, needs review)</span>}
+                    {b.history.pendingReview && <span className="text-accent"> (possible match — awaiting admin review)</span>}
                   </>
                 )}
                 .
@@ -166,6 +166,12 @@ function EventDetail({ event: e, reveal }: { event: ScoreEvent; reveal: boolean 
               <span className="text-text">none found — new customer</span>
             )}
           </span>
+        </div>
+      )}
+
+      {b.history?.aliases && (
+        <div className="text-xs text-muted">
+          Also written as: {b.history.aliases.map((a) => `"${reveal ? a : doctorLabel(a, false)}"`).join(", ")} — counted as one doctor.
         </div>
       )}
 

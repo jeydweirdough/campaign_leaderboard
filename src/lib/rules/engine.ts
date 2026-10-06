@@ -1,4 +1,5 @@
 import type { Award, ProductGroup, Rule, Ruleset } from "./schema";
+import { doctorNameKey, pairId } from "./doctor-match";
 
 /**
  * Pure scoring engine. Given a ruleset and the raw facts (invoices, claims,
@@ -75,7 +76,14 @@ export type ScoreInput = {
    * (null = none). Missing key = not fetched yet. Used by per_order rules with newCustomerMonths.
    */
   customerHistory?: Map<string, { lastDate: string | null; lastNumber: string | null; checkedBefore: string }>;
+  /** doctorKey -> every earlier-invoice match found in Zoho (exact + spelling variants). */
+  doctorCandidates?: Map<string, DoctorCandidateFact[]>;
+  /** Suggested same-doctor pairs and the admin's verdict on each. */
+  doctorMatches?: DoctorMatchFact[];
 };
+
+export type DoctorCandidateFact = { name: string; key: string; date: string; number: string; confidence: "exact" | "same" | "possible"; reason?: string };
+export type DoctorMatchFact = { keyA: string; keyB: string; level: "same" | "possible"; decision: "pending" | "same" | "different" };
 
 /** The Zoho invoice data a point was computed from. */
 export type OrderBasis = {
@@ -95,7 +103,18 @@ export type OrderBasis = {
 
 export type EventBasis = {
   invoices?: OrderBasis[];
-  history?: { lastDate: string | null; lastNumber: string | null; checkedBefore: string; gapMonths?: number; matchedName?: string | null; confidence?: string | null };
+  history?: {
+    lastDate: string | null;
+    lastNumber: string | null;
+    checkedBefore: string;
+    gapMonths?: number;
+    matchedName?: string | null;
+    confidence?: string | null;
+    /** The decision rests on an unreviewed "possible" name match. */
+    pendingReview?: boolean;
+    /** Other spellings merged into this doctor for the campaign. */
+    aliases?: string[];
+  };
   /** Customer (hospital) look-back for "new customer" rules. */
   customerHistory?: { lastDate: string | null; lastNumber: string | null; checkedBefore: string; months: number };
   related?: { number: string; date: string }[];
@@ -150,6 +169,8 @@ export type ScoreResult = {
     unmappedSalespersons: { id: string; name: string; invoices: number; focusSales: number }[];
     doctorsMissingHistory: string[];
     customersMissingHistory: string[];
+    /** Doctors whose New/Comeback result depends on a name match nobody has reviewed yet. */
+    doctorsPendingReview: string[];
     skippedInvoices: number;
   };
 };
@@ -157,14 +178,10 @@ export type ScoreResult = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function doctorKey(name: string, blankValues: string[]): string | null {
-  const cleaned = name
-    .toLowerCase()
-    .replace(/^\s*(dr|dra|doc)\.?\s+/i, "")
-    .replace(/[.,]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const cleaned = name.toLowerCase().replace(/\s+/g, " ").trim();
   if (blankValues.map((v) => v.toLowerCase()).includes(cleaned)) return null;
-  return cleaned || null;
+  // Title-, credential-, accent- and order-insensitive ("Roxan A. Perez, M.D." = "Dr. Roxan A. Perez").
+  return doctorNameKey(name) || null;
 }
 
 export function addMonths(date: string, months: number): string {
@@ -273,10 +290,83 @@ export function computeScores(input: ScoreInput): ScoreResult {
     });
   }
 
+  // ---- 1b. Merge doctor spellings that are the same person ---------------
+  // Confirmed "same" pairs always merge; auto "same" pairs merge unless an admin said "different".
+  const decisionOf = new Map((input.doctorMatches ?? []).map((m) => [pairId(m.keyA, m.keyB), m]));
+  const parent = new Map<string, string>();
+  const find = (k: string): string => {
+    let r = k;
+    while (parent.get(r) && parent.get(r) !== r) r = parent.get(r)!;
+    return r;
+  };
+  const firstDateOfKey = new Map<string, string>();
+  for (const o of orders) if (o.doctorKey && !firstDateOfKey.has(o.doctorKey)) firstDateOfKey.set(o.doctorKey, o.inv.date);
+  for (const m of input.doctorMatches ?? []) {
+    const merge = m.decision === "same" || (m.decision === "pending" && m.level === "same");
+    if (!merge || !firstDateOfKey.has(m.keyA) || !firstDateOfKey.has(m.keyB)) continue;
+    const [ra, rb] = [find(m.keyA), find(m.keyB)];
+    if (ra === rb) continue;
+    // The spelling that ordered first becomes the group's key.
+    const aFirst = (firstDateOfKey.get(ra) ?? "") <= (firstDateOfKey.get(rb) ?? "");
+    parent.set(aFirst ? rb : ra, aFirst ? ra : rb);
+  }
+  const members = new Map<string, Set<string>>();
+  const namesOfKey = new Map<string, Set<string>>();
+  for (const o of orders) {
+    if (!o.doctorKey) continue;
+    const root = find(o.doctorKey);
+    (members.get(root) ?? members.set(root, new Set()).get(root)!).add(o.doctorKey);
+    (namesOfKey.get(root) ?? namesOfKey.set(root, new Set()).get(root)!).add(o.inv.doctorName.trim());
+    o.doctorKey = root;
+  }
+  const pendingReview = new Set<string>();
+
+  /** Most recent earlier invoice for a (merged) doctor, honouring admin decisions. undefined = not fetched yet. */
+  const doctorLast = (root: string, firstDate: string) => {
+    const keys = [...(members.get(root) ?? [root])];
+    if (!input.doctorCandidates) {
+      if (!input.doctorHistory.has(root)) return undefined;
+      const meta = input.doctorHistoryMeta?.get(root);
+      return {
+        lastDate: input.doctorHistory.get(root) ?? null,
+        lastNumber: meta?.lastNumber ?? null,
+        checkedBefore: meta?.checkedBefore ?? firstDate,
+        matchedName: meta?.matchedName ?? null,
+        confidence: meta?.confidence ?? null,
+        pendingReview: false,
+      };
+    }
+    if (!keys.some((k) => input.doctorHistory.has(k))) return undefined;
+    let best: (DoctorCandidateFact & { pending: boolean }) | null = null;
+    for (const k of keys) {
+      for (const c of input.doctorCandidates.get(k) ?? []) {
+        if (c.date >= firstDate) continue; // the doctor's own campaign orders don't count as history
+        let pending = false;
+        if (c.confidence !== "exact" && !keys.includes(c.key)) {
+          const verdicts = keys.map((m) => decisionOf.get(pairId(m, c.key))).filter(Boolean);
+          if (verdicts.some((v) => v!.decision === "different")) continue;
+          pending = c.confidence === "possible" && !verdicts.some((v) => v!.decision === "same");
+        }
+        if (!best || c.date > best.date) best = { ...c, pending };
+      }
+    }
+    const meta = input.doctorHistoryMeta?.get(root);
+    return {
+      lastDate: best?.date ?? null,
+      lastNumber: best?.number ?? null,
+      checkedBefore: meta?.checkedBefore ?? firstDate,
+      matchedName: best?.name ?? null,
+      confidence: best?.confidence ?? null,
+      pendingReview: !!best?.pending,
+    };
+  };
+
   // ---- 2. Apply rules ---------------------------------------------------
   const events: ScoreEvent[] = [];
   const missingHistory = new Set<string>();
   const missingCustomers = new Set<string>();
+  const firstDateOfDoctor = new Map<string, string>();
+  for (const o of orders) if (o.doctorKey && !firstDateOfDoctor.has(o.doctorKey)) firstDateOfDoctor.set(o.doctorKey, o.inv.date);
   const firstOrderOfCustomer = new Map<string, string>();
   for (const o of orders) if (!firstOrderOfCustomer.has(o.inv.customerId)) firstOrderOfCustomer.set(o.inv.customerId, o.inv.id);
   const peso = (n: number) => `₱${round2(n).toLocaleString("en-PH")}`;
@@ -381,19 +471,15 @@ export function computeScores(input: ScoreInput): ScoreResult {
         for (const o of eligible) {
           if (!o.doctorKey || seen.has(o.doctorKey)) continue;
           seen.add(o.doctorKey); // only the doctor's first qualifying order in the campaign
-          if (!input.doctorHistory.has(o.doctorKey)) {
+          const found = doctorLast(o.doctorKey, firstDateOfDoctor.get(o.doctorKey) ?? o.inv.date);
+          if (!found) {
             missingHistory.add(o.inv.doctorName);
             continue;
           }
-          const last = input.doctorHistory.get(o.doctorKey) ?? null;
-          const meta = input.doctorHistoryMeta?.get(o.doctorKey);
-          const history = {
-            lastDate: last,
-            lastNumber: meta?.lastNumber ?? null,
-            checkedBefore: meta?.checkedBefore ?? o.inv.date,
-            matchedName: meta?.matchedName ?? null,
-            confidence: meta?.confidence ?? null,
-          };
+          const last = found.lastDate;
+          const aliases = [...(namesOfKey.get(o.doctorKey) ?? [])].filter((n) => n !== o.inv.doctorName.trim());
+          const history = { ...found, aliases: aliases.length ? aliases : undefined };
+          if (found.pendingReview) pendingReview.add(o.inv.doctorName);
           const pts = rule.points[o.groupId] ?? 0;
           if (!pts) continue;
           if (rule.type === "doctor_new" && last === null) {
@@ -587,6 +673,7 @@ export function computeScores(input: ScoreInput): ScoreResult {
       unmappedSalespersons: [...unmapped.values()].sort((a, b) => b.focusSales - a.focusSales),
       doctorsMissingHistory: [...missingHistory],
       customersMissingHistory: [...missingCustomers],
+      doctorsPendingReview: [...pendingReview],
       skippedInvoices: skipped,
     },
   };

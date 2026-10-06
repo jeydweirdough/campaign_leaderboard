@@ -47,7 +47,7 @@ export default async function Overview({ params, searchParams }: PageProps<"/adm
         </div>
       </div>
 
-      {(w.unmappedSalespersons.length > 0 || w.doctorsMissingHistory.length > 0 || w.customersMissingHistory.length > 0) && (
+      {(w.unmappedSalespersons.length > 0 || w.doctorsMissingHistory.length > 0 || w.customersMissingHistory.length > 0 || w.doctorsPendingReview.length > 0) && (
         <section className="card border-accent/50 p-5">
           <h2 className="font-display text-xl font-bold uppercase text-accent">Needs attention</h2>
           {w.unmappedSalespersons.length > 0 && (
@@ -73,6 +73,12 @@ export default async function Overview({ params, searchParams }: PageProps<"/adm
                 </tbody>
               </table>
             </>
+          )}
+          {w.doctorsPendingReview.length > 0 && (
+            <p className="mt-3 text-sm text-muted">
+              {w.doctorsPendingReview.length} doctor(s) are held as &ldquo;seen before&rdquo; on an unconfirmed name match: {w.doctorsPendingReview.join(", ")}.{" "}
+              <Link href={`/admin/c/${id}/doctors`} className="text-accent underline">Review doctor matches</Link>
+            </p>
           )}
           {w.customersMissingHistory.length > 0 && (
             <p className="mt-3 text-sm text-muted">

@@ -228,3 +228,15 @@ export async function includeInvoice(campaignId: string, invoiceId: string) {
   await db.delete(schema.exclusions).where(and(eq(schema.exclusions.campaignId, campaignId), eq(schema.exclusions.invoiceId, invoiceId)));
   done(campaignId);
 }
+
+// ---- Doctor name matches -----------------------------------------------------
+
+export async function decideDoctorMatch(campaignId: string, keyA: string, keyB: string, decision: "same" | "different" | "pending") {
+  await requireAdmin();
+  await db
+    .update(schema.doctorMatches)
+    .set({ decision, decidedAt: decision === "pending" ? null : new Date().toISOString() })
+    .where(and(eq(schema.doctorMatches.keyA, keyA), eq(schema.doctorMatches.keyB, keyB)));
+  done(campaignId);
+  revalidatePath("/c", "layout"); // public scores change with the verdict
+}

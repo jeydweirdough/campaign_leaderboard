@@ -16,13 +16,18 @@ function hash(s: string) {
 }
 
 /** "STC NCL" -> "SN", "BNB E. RODRIGUEZ" -> "BE" */
-function initials(name: string) {
+export function initials(name: string) {
   const words = name.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
   return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
+/** [fill, highlight] colours for a team — stable per name. Shared with the share image. */
+export function avatarColors(name: string) {
+  return PALETTE[hash(name) % PALETTE.length];
+}
+
 export function TeamAvatar({ name, size = 56, rank }: { name: string; size?: number; rank?: number }) {
-  const [bg, fg] = PALETTE[hash(name) % PALETTE.length];
+  const [bg, fg] = avatarColors(name);
   return (
     <span className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
       <span

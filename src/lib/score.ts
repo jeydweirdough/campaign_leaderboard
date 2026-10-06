@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, gte, lte } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { computeScores, type ScoreResult } from "@/lib/rules/engine";
+import { doctorNameKey } from "@/lib/rules/doctor-match";
 import { parseRuleset, type Ruleset } from "@/lib/rules/schema";
 
 export type Campaign = typeof schema.campaigns.$inferSelect;
@@ -21,7 +22,7 @@ export async function getCampaign(id: string) {
 export async function scoreCampaign(campaign: Campaign, asOf?: string): Promise<{ ruleset: Ruleset; result: ScoreResult }> {
   const ruleset = parseRuleset(campaign.ruleset);
   const isDemo = campaign.dataSource === "demo";
-  const [teams, invoices, claims, adjustments, history, exclusions, customers] = await Promise.all([
+  const [teams, invoices, claims, adjustments, history, exclusions, customers, matches] = await Promise.all([
     db.query.teams.findMany({ where: eq(schema.teams.campaignId, campaign.id) }),
     db
       .select()
@@ -32,6 +33,7 @@ export async function scoreCampaign(campaign: Campaign, asOf?: string): Promise<
     db.query.doctorHistory.findMany({ where: eq(schema.doctorHistory.campaignId, campaign.id) }),
     db.query.exclusions.findMany({ where: eq(schema.exclusions.campaignId, campaign.id) }),
     db.query.customerHistory.findMany({ where: eq(schema.customerHistory.campaignId, campaign.id) }),
+    db.select().from(schema.doctorMatches),
   ]);
 
   const result = computeScores({
@@ -44,6 +46,24 @@ export async function scoreCampaign(campaign: Campaign, asOf?: string): Promise<
     doctorHistory: new Map(history.map((h) => [h.doctorKey, h.lastInvoiceDate])),
     doctorHistoryMeta: new Map(history.map((h) => [h.doctorKey, { lastNumber: h.lastInvoiceNumber, checkedBefore: h.checkedBefore, matchedName: h.matchedName, confidence: h.matchConfidence }])),
     excludedInvoiceIds: new Set(exclusions.map((e) => e.invoiceId)),
+    // Rows saved before candidates existed still count via their single best match.
+    doctorCandidates: new Map(
+      history.map((h) => [
+        h.doctorKey,
+        h.candidates.length
+          ? h.candidates
+          : h.lastInvoiceDate
+            ? [{
+                name: h.matchedName ?? h.doctorName,
+                key: h.matchedName ? doctorNameKey(h.matchedName) : h.doctorKey,
+                date: h.lastInvoiceDate,
+                number: h.lastInvoiceNumber ?? "",
+                confidence: (h.matchConfidence ?? "exact") as "exact" | "same" | "possible",
+              }]
+            : [],
+      ]),
+    ),
+    doctorMatches: matches.map((m) => ({ keyA: m.keyA, keyB: m.keyB, level: m.level, decision: m.decision })),
     customerHistory: new Map(
       customers.map((c) => [c.customerId, { lastDate: c.lastInvoiceDate, lastNumber: c.lastInvoiceNumber, checkedBefore: c.checkedBefore }]),
     ),

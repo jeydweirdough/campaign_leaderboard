@@ -10,7 +10,7 @@
     "db:push": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs push",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
     "db:studio": "node --env-file=.env.local node_modules/drizzle-kit/bin.cjs studio",
-    "test": "tsx --test src/lib/rules/engine.test.ts",
+    "test": "tsx --test src/lib/rules/engine.test.ts src/lib/rules/doctor-match.test.ts",
     "typecheck": "tsc --noEmit",
     "sync": "tsx --conditions=react-server --env-file=.env.local scripts/sync.ts",
     "report:new-doctors": "tsx --conditions=react-server --env-file=.env.local scripts/report-new-doctors.ts"
@@ -21,6 +21,7 @@
     "drizzle-orm": "^0.45.3",
     "lucide-react": "^1.52.0",
     "next": "16.3.8",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.11",
