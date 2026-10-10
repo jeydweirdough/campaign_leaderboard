@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Download, Image as ImageIcon, Loader2, Share2, X } from "lucide-react";
 
-/** Opens a preview of the shareable top-3 PNG with download / share / copy-link actions. */
+const REFRESH_SECONDS = 60;
+
+/**
+ * Opens a preview of the shareable top-6 PNG with download / share / copy-link actions.
+ * The image is rendered from the latest synced data each time, and re-rendered every minute while open.
+ */
 export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }) {
   const [open, setOpen] = useState(false);
   const [stamp, setStamp] = useState(0);
@@ -11,6 +16,7 @@ export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }
   const [copied, setCopied] = useState(false);
   const [canShareFile, setCanShareFile] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [checkedAt, setCheckedAt] = useState(0);
   const src = `/c/${slug}/share?t=${stamp}`;
   const filename = `${slug}-top6.png`;
 
@@ -21,8 +27,26 @@ export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }
     if (!open && d.open) d.close();
   }, [open]);
 
+  // While open, render a new image in the background and swap it in once it has loaded (no flicker).
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      const next = Date.now();
+      const img = new Image();
+      img.onload = () => {
+        setStamp(next);
+        setCheckedAt(next);
+      };
+      img.src = `/c/${slug}/share?t=${next}`;
+    }, REFRESH_SECONDS * 1000);
+    return () => clearInterval(id);
+  }, [open, slug]);
+
   const show = () => {
-    setStamp(Date.now()); // fresh image every time it's opened
+    const now = Date.now();
+    setStamp(now); // fresh image every time it's opened
+    setCheckedAt(now);
     setLoaded(false);
     setCopied(false);
     try {
@@ -108,6 +132,9 @@ export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }
               </button>
             )}
             <p className="mt-3 break-all text-center text-xs text-muted">{pageUrl}</p>
+            <p className="mt-1 text-center text-[11px] text-muted">
+              Live — updates automatically every {REFRESH_SECONDS}s{loaded && checkedAt ? ` · last checked ${new Date(checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+            </p>
           </div>
         )}
       </dialog>

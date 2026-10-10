@@ -19,6 +19,11 @@ export const campaigns = pgTable("campaigns", {
   dataSource: text("data_source", { enum: ["zoho", "demo"] }).notNull().default("zoho"),
   /** Artwork behind the public pages and share image: a path under /public (e.g. /campaigns/rise-3-bg.jpg) or a full URL. */
   backgroundImage: text("background_image"),
+  /** Artwork behind the daily share image only; falls back to backgroundImage when empty. */
+  shareImage: text("share_image"),
+  /** Google Fonts families for the share image: display = wordmark, team names, points; body = everything else. Null = Inter. */
+  shareFontDisplay: text("share_font_display"),
+  shareFontBody: text("share_font_body"),
   lastSyncedAt: text("last_synced_at"),
   createdAt: text("created_at").notNull().default(now),
   updatedAt: text("updated_at").notNull().default(now),
@@ -190,3 +195,19 @@ export const syncLogs = pgTable("sync_logs", {
   ok: boolean("ok").notNull().default(false),
   summary: text("summary").notNull().default(""),
 });
+
+/** Artwork uploaded from the admin, served by /api/campaign-image/[id]/[kind]. Kept out of `campaigns` so normal reads stay small. */
+export const campaignImages = pgTable(
+  "campaign_images",
+  {
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["background", "share"] }).notNull(),
+    mime: text("mime").notNull(),
+    /** base64 */
+    data: text("data").notNull(),
+    updatedAt: text("updated_at").notNull().default(now),
+  },
+  (t) => [primaryKey({ columns: [t.campaignId, t.kind] })],
+);

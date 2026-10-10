@@ -9,6 +9,8 @@ import { rulesetSchema } from "@/lib/rules/schema";
 import { RISE_3_RULESET } from "@/lib/rules/presets";
 import { syncCampaign, type SyncSummary } from "@/lib/sync";
 import { searchItems } from "@/lib/zoho/client";
+import { DEFAULT_FONT, loadGoogleFont } from "@/lib/share-fonts";
+import { IMAGE_KINDS, IMAGE_MIMES, MAX_IMAGE_BYTES, uploadedImageUrl, type ImageKind } from "@/lib/campaign-images";
 
 const str = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const done = (campaignId: string) => revalidatePath(`/admin/c/${campaignId}`, "layout");
@@ -63,6 +65,60 @@ export async function updateCampaign(id: string, fd: FormData) {
     })
     .where(eq(schema.campaigns.id, id));
   done(id);
+}
+
+const IMAGE_COLUMN = { background: "backgroundImage", share: "shareImage" } as const;
+
+/** Upload (or replace) the leaderboard background or the share-image background. */
+export async function uploadCampaignImage(id: string, kind: ImageKind, fd: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdmin();
+  if (!IMAGE_KINDS.includes(kind)) return { ok: false, error: "Unknown image slot." };
+  const file = fd.get("file");
+  if (!(file instanceof File) || !file.size) return { ok: false, error: "Choose an image first." };
+  if (!IMAGE_MIMES.includes(file.type)) return { ok: false, error: "Use a JPG, PNG or WebP image." };
+  if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "Image is over 3 MB." };
+
+  const data = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const updatedAt = new Date().toISOString();
+  await db
+    .insert(schema.campaignImages)
+    .values({ campaignId: id, kind, mime: file.type, data, updatedAt })
+    .onConflictDoUpdate({ target: [schema.campaignImages.campaignId, schema.campaignImages.kind], set: { mime: file.type, data, updatedAt } });
+  await db
+    .update(schema.campaigns)
+    .set({ [IMAGE_COLUMN[kind]]: uploadedImageUrl(id, kind, Date.now()), updatedAt })
+    .where(eq(schema.campaigns.id, id));
+  done(id);
+  revalidatePath("/c/[slug]", "layout");
+  return { ok: true };
+}
+
+/** Clear an artwork slot. The share image then falls back to the leaderboard background. */
+export async function removeCampaignImage(id: string, kind: ImageKind) {
+  await requireAdmin();
+  if (!IMAGE_KINDS.includes(kind)) return;
+  await db.delete(schema.campaignImages).where(and(eq(schema.campaignImages.campaignId, id), eq(schema.campaignImages.kind, kind)));
+  await db
+    .update(schema.campaigns)
+    .set({ [IMAGE_COLUMN[kind]]: null, updatedAt: new Date().toISOString() })
+    .where(eq(schema.campaigns.id, id));
+  done(id);
+  revalidatePath("/c/[slug]", "layout");
+}
+
+/** Fonts for the share image. Blank = Inter. Each name is checked against Google Fonts before saving. */
+export async function saveShareFonts(id: string, display: string, body: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdmin();
+  const clean = (f: string) => f.trim().replace(/s+/g, " ").slice(0, 60) || null;
+  const picked = { shareFontDisplay: clean(display), shareFontBody: clean(body) };
+  for (const family of [picked.shareFontDisplay, picked.shareFontBody]) {
+    if (family && family !== DEFAULT_FONT && !(await loadGoogleFont(family)).length) {
+      return { ok: false, error: `Couldn't find "${family}" on Google Fonts. Check the spelling (e.g. "Bebas Neue").` };
+    }
+  }
+  await db.update(schema.campaigns).set({ ...picked, updatedAt: new Date().toISOString() }).where(eq(schema.campaigns.id, id));
+  done(id);
+  return { ok: true };
 }
 
 export async function deleteCampaign(id: string) {

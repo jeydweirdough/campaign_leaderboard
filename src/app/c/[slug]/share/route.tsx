@@ -1,9 +1,9 @@
 import { ImageResponse } from "next/og";
 import QRCode from "qrcode";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { getCampaignBySlug, previousRanks, scoreCampaign } from "@/lib/score";
 import { isAdmin } from "@/lib/admin";
+import { loadImageForRender } from "@/lib/campaign-images";
+import { loadShareFonts } from "@/lib/share-fonts";
 import { manilaToday, num } from "@/lib/format";
 import { publicBaseUrl } from "@/lib/public-url";
 import { avatarColors, initials } from "@/components/team-avatar";
@@ -36,40 +36,6 @@ const PLACES = [
 ];
 
 // ---------- assets ----------
-
-type Font = { name: string; data: ArrayBuffer; weight: 400 | 500 | 600 | 700 | 800; style: "normal" };
-let fontCache: Promise<Font[]> | null = null;
-/** Inter (the site font). Google serves TTF to non-browser clients; cached per server process. */
-function loadFonts(): Promise<Font[]> {
-  fontCache ??= (async () => {
-    const css = await (await fetch("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800")).text();
-    const faces = [...css.matchAll(/font-weight:\s*(\d+);[\s\S]*?url\((https:[^)]+\.ttf)\)/g)];
-    if (!faces.length) throw new Error("no TTF faces in Google Fonts response");
-    return Promise.all(
-      faces.map(async ([, w, url]) => ({ name: "Inter", data: await (await fetch(url)).arrayBuffer(), weight: Number(w) as Font["weight"], style: "normal" as const })),
-    );
-  })().catch((e) => {
-    fontCache = null;
-    console.warn(`[share] font load failed: ${(e as Error).message}`);
-    return [];
-  });
-  return fontCache;
-}
-
-/** Campaign artwork as something the renderer can draw: a data URI for /public files, else the URL. */
-async function loadArtwork(src: string | null): Promise<string | null> {
-  if (!src) return null;
-  if (/^https?:\/\//.test(src)) return src;
-  try {
-    const file = path.join(process.cwd(), "public", src.replace(/^\/+/, ""));
-    const ext = path.extname(file).slice(1).toLowerCase();
-    const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-    return `data:${mime};base64,${(await readFile(file)).toString("base64")}`;
-  } catch (e) {
-    console.warn(`[share] background not found: ${src} (${(e as Error).message})`);
-    return null;
-  }
-}
 
 // ---------- helpers ----------
 
@@ -187,7 +153,12 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
   const campaign = await getCampaignBySlug(slug);
   if (!campaign || (campaign.status === "draft" && !(await isAdmin()))) return new Response("Not found", { status: 404 });
 
-  const [{ result }, prev, fonts, art] = await Promise.all([scoreCampaign(campaign), previousRanks(campaign), loadFonts(), loadArtwork(campaign.backgroundImage)]);
+  const [{ result }, prev, { fonts, display: df, body: bf }, art] = await Promise.all([
+    scoreCampaign(campaign),
+    previousRanks(campaign),
+    loadShareFonts(campaign.shareFontDisplay, campaign.shareFontBody),
+    loadImageForRender(campaign.shareImage || campaign.backgroundImage),
+  ]);
   const top = result.teams.filter((t) => t.total > 0).slice(0, 6);
   // Set PUBLIC_BASE_URL so the QR code works on phones, not just this computer.
   const url = `${await publicBaseUrl()}/c/${slug}`;
@@ -201,7 +172,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
 
   return new ImageResponse(
     (
-      <div style={{ width: W, height: H, display: "flex", position: "relative", backgroundImage: `linear-gradient(180deg, ${C.bgDeep}, ${C.bg} 45%, ${C.bgDeep})`, color: C.text, fontFamily: "Inter" }}>
+      <div style={{ width: W, height: H, display: "flex", position: "relative", backgroundImage: `linear-gradient(180deg, ${C.bgDeep}, ${C.bg} 45%, ${C.bgDeep})`, color: C.text, fontFamily: bf }}>
         {/* ---- backdrop: campaign artwork, court lines, basketballs ---- */}
         {art && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -245,7 +216,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
           {/* Wordmark + full form */}
           <div style={{ display: "flex", alignItems: "center", gap: 40, marginTop: 30 }}>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", fontSize: b.expansion.length ? 170 : 72, fontWeight: 800, letterSpacing: b.expansion.length ? -6 : -2, lineHeight: 1 }}>{b.word}</div>
+              <div style={{ display: "flex", fontFamily: df, fontSize: b.expansion.length ? 170 : 72, fontWeight: 800, letterSpacing: b.expansion.length ? -6 : -2, lineHeight: 1 }}>{b.word}</div>
               {b.rest && <div style={{ display: "flex", fontSize: 30, fontWeight: 600, color: C.muted, marginTop: 6 }}>{b.rest}</div>}
             </div>
             {b.expansion.length > 0 && (
@@ -274,7 +245,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
                     </div>
                   )}
                   {t ? <Avatar name={t.team.name} size={p.avatar} ring={p.ring} /> : <div style={{ display: "flex", width: p.avatar, height: p.avatar, borderRadius: p.avatar, border: `4px dashed ${C.line}` }} />}
-                  <div style={{ display: "flex", fontSize: i === 0 ? 32 : 27, fontWeight: 700, marginTop: 14, textAlign: "center", justifyContent: "center", width: "100%" }}>
+                  <div style={{ display: "flex", fontFamily: df, fontSize: i === 0 ? 32 : 27, fontWeight: 700, marginTop: 14, textAlign: "center", justifyContent: "center", width: "100%" }}>
                     {t ? t.team.name : "Up for grabs"}
                   </div>
                   {t && (
@@ -283,7 +254,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
                     </div>
                   )}
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 10 }}>
-                    <div style={{ display: "flex", fontSize: i === 0 ? 64 : 50, fontWeight: 800, letterSpacing: -1 }}>{t ? num(t.total) : "—"}</div>
+                    <div style={{ display: "flex", fontFamily: df, fontSize: i === 0 ? 64 : 50, fontWeight: 800, letterSpacing: -1 }}>{t ? num(t.total) : "—"}</div>
                     <div style={{ display: "flex", fontSize: 20, fontWeight: 600, color: C.muted }}>PTS</div>
                   </div>
                   {t && (
@@ -305,6 +276,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
                       backgroundImage:
                         "linear-gradient(90deg, #8a5426 0%, #a8693a 9%, #94592b 18%, #b07343 30%, #8f5528 42%, #a66737 55%, #92592a 68%, #ad7040 82%, #8a5426 100%)",
                       color: "#fff7e8",
+                      fontFamily: df,
                       fontSize: i === 0 ? 72 : 56,
                       fontWeight: 800,
                       paddingTop: 6,
@@ -324,15 +296,15 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
               const t = top[i];
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 22, padding: "16px 26px", borderRadius: 20, background: art ? "rgba(34,36,40,0.88)" : C.surface }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 54, height: 54, borderRadius: 54, background: C.surface2, fontSize: 26, fontWeight: 800 }}>{i + 1}</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 54, height: 54, borderRadius: 54, background: C.surface2, fontFamily: df, fontSize: 26, fontWeight: 800 }}>{i + 1}</div>
                   {t ? <Avatar name={t.team.name} size={60} /> : <div style={{ display: "flex", width: 60, height: 60, borderRadius: 60, border: `3px dashed ${C.line}` }} />}
                   <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                    <div style={{ display: "flex", fontSize: 28, fontWeight: 700, color: t ? C.text : C.muted }}>{t ? t.team.name : "Up for grabs"}</div>
+                    <div style={{ display: "flex", fontFamily: df, fontSize: 28, fontWeight: 700, color: t ? C.text : C.muted }}>{t ? t.team.name : "Up for grabs"}</div>
                     {t && <div style={{ display: "flex", fontSize: 19, color: C.muted, marginTop: 2 }}>{subtitleOf(t)}</div>}
                   </div>
                   {t && <Movement prev={prev.get(t.team.id)} now={t.rank} size={20} />}
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 140, justifyContent: "flex-end" }}>
-                    <div style={{ display: "flex", fontSize: 40, fontWeight: 800 }}>{t ? num(t.total) : "—"}</div>
+                    <div style={{ display: "flex", fontFamily: df, fontSize: 40, fontWeight: 800 }}>{t ? num(t.total) : "—"}</div>
                     <div style={{ display: "flex", fontSize: 18, fontWeight: 600, color: C.muted }}>PTS</div>
                   </div>
                 </div>
@@ -345,7 +317,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/c/[slug]
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qr} width={170} height={170} style={{ borderRadius: 14 }} alt="" />
             <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-              <div style={{ display: "flex", fontSize: 32, fontWeight: 700 }}>See the full ranking</div>
+              <div style={{ display: "flex", fontFamily: df, fontSize: 32, fontWeight: 700 }}>See the full ranking</div>
               <div style={{ display: "flex", fontSize: 22, color: C.muted, marginTop: 8 }}>Scan the code, or open:</div>
               <div style={{ display: "flex", fontSize: 26, fontWeight: 700, color: C.accent, marginTop: 4 }}>{url.replace(/^https?:\/\//, "")}</div>
               <div style={{ display: "flex", fontSize: 18, color: C.muted, marginTop: 10 }}>Provisional — subject to management validation · ▲▼ vs yesterday</div>
