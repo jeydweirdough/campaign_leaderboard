@@ -1,22 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, Image as ImageIcon, Loader2, Share2, X } from "lucide-react";
-
-const REFRESH_SECONDS = 60;
+import { Check, Copy, Download, Image as ImageIcon, Loader2, RefreshCw, Share2, X } from "lucide-react";
+import { useSyncNow } from "./sync-now";
 
 /**
  * Opens a preview of the shareable top-6 PNG with download / share / copy-link actions.
- * The image is rendered from the latest synced data each time, and re-rendered every minute while open.
+ * The image is drawn from the last synced data; "Sync now" pulls from Zoho and redraws it.
  */
-export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }) {
+export function ShareButton({ slug, pageUrl, updated }: { slug: string; pageUrl: string; updated: string }) {
   const [open, setOpen] = useState(false);
   const [stamp, setStamp] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [canShareFile, setCanShareFile] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const [checkedAt, setCheckedAt] = useState(0);
   const src = `/c/${slug}/share?t=${stamp}`;
   const filename = `${slug}-top6.png`;
 
@@ -27,27 +25,14 @@ export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }
     if (!open && d.open) d.close();
   }, [open]);
 
-  // While open, render a new image in the background and swap it in once it has loaded (no flicker).
-  useEffect(() => {
-    if (!open) return;
-    const id = setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      const next = Date.now();
-      const img = new Image();
-      img.onload = () => {
-        setStamp(next);
-        setCheckedAt(next);
-      };
-      img.src = `/c/${slug}/share?t=${next}`;
-    }, REFRESH_SECONDS * 1000);
-    return () => clearInterval(id);
-  }, [open, slug]);
+  const redraw = () => {
+    setStamp(Date.now());
+    setLoaded(false);
+  };
+  const { sync, pending: syncing, msg } = useSyncNow(slug, redraw);
 
   const show = () => {
-    const now = Date.now();
-    setStamp(now); // fresh image every time it's opened
-    setCheckedAt(now);
-    setLoaded(false);
+    redraw(); // fresh image every time it's opened
     setCopied(false);
     try {
       setCanShareFile(!!navigator.canShare?.({ files: [new File([""], filename, { type: "image/png" })] }));
@@ -132,9 +117,12 @@ export function ShareButton({ slug, pageUrl }: { slug: string; pageUrl: string }
               </button>
             )}
             <p className="mt-3 break-all text-center text-xs text-muted">{pageUrl}</p>
-            <p className="mt-1 text-center text-[11px] text-muted">
-              Live — updates automatically every {REFRESH_SECONDS}s{loaded && checkedAt ? ` · last checked ${new Date(checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
-            </p>
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 text-xs text-muted">
+              <span className={msg && !msg.ok ? "text-bad" : ""}>{syncing ? "Getting the latest from Zoho…" : (msg?.text ?? `Data updated ${updated}`)}</span>
+              <button onClick={sync} disabled={syncing} className="btn btn-sm shrink-0">
+                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} /> {syncing ? "Syncing…" : "Sync now"}
+              </button>
+            </div>
           </div>
         )}
       </dialog>

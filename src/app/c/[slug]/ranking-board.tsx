@@ -509,7 +509,7 @@ function MyTeamBar({
   );
 }
 
-/** Ids of teams whose total went up since the previous render (e.g. after auto-refresh). */
+/** Ids of teams whose total went up since the previous render (e.g. after "Sync now"). */
 function useFlashOnIncrease(teams: BoardTeam[]) {
   const prev = useRef<Map<string, number> | null>(null);
   const [flash, setFlash] = useState<Set<string>>(new Set());

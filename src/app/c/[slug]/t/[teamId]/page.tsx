@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Building2, Flame, Star, Stethoscope, type LucideIcon } from "lucide-react";
 import { getCampaignBySlug, scoreCampaign } from "@/lib/score";
 import { isAdmin } from "@/lib/admin";
-import { AutoRefresh } from "@/components/auto-refresh";
 import { PublicShell } from "@/components/public-shell";
 import { TeamAvatar } from "@/components/team-avatar";
 import { Medal } from "@/components/medal";
@@ -37,7 +36,6 @@ export default async function TeamPage({ params }: PageProps<"/c/[slug]/t/[teamI
 
   return (
     <PublicShell active="leaderboard" slug={slug} background={campaign.backgroundImage}>
-      <AutoRefresh seconds={60} />
       <Link href={`/c/${slug}`} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-text">
         <ArrowLeft className="h-4 w-4" /> Leaderboard
       </Link>

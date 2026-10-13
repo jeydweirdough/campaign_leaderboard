@@ -25,6 +25,8 @@ export const campaigns = pgTable("campaigns", {
   shareFontDisplay: text("share_font_display"),
   shareFontBody: text("share_font_body"),
   lastSyncedAt: text("last_synced_at"),
+  /** Set while a sync triggered from the public page runs, so two visitors can't start overlapping syncs. */
+  syncStartedAt: text("sync_started_at"),
   createdAt: text("created_at").notNull().default(now),
   updatedAt: text("updated_at").notNull().default(now),
 });

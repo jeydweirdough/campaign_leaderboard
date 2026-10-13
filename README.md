@@ -36,12 +36,12 @@ Generate a refresh token, then set `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET` and `Z
 2. Fetches line items only for invoices that are new or changed, based on `last_modified_time`.
 3. Finds each doctor's most recent invoice **before** their first focus order in the campaign. It searches the `cf_doctor_name` custom field. The New Doctor and Reactivation rules depend on this result.
 
-Ways to run a sync:
+There is no automatic sync. The data changes only when someone runs one of these:
 
-- **Automatic:** while the server runs, it syncs every live Zoho campaign every `AUTO_SYNC_MINUTES` (default 15, `0` turns it off). A page reload shows whatever the last sync saved, and the leaderboard auto-refreshes every 60s.
+- **Sync now** on the public leaderboard or in the share dialog. Anyone viewing the page can click it. Only one sync runs at a time per campaign, a click within 2 minutes of the last sync just reloads the page, and closed campaigns can't be synced.
 - **Command line:** `npm run sync`, or `npm run sync -- rise-3` for one campaign. This doesn't need the dev server, so prefer it on low-memory machines.
 - Click **Sync from Zoho now** on a campaign's admin Overview tab.
-- Schedule `GET /api/cron/sync` with the header `Authorization: Bearer $CRON_SECRET`. Use this on Vercel and set `AUTO_SYNC_MINUTES=0` there.
+- `GET /api/cron/sync` with the header `Authorization: Bearer $CRON_SECRET` syncs every live Zoho campaign, for scripts or an external scheduler if you ever want one.
 
 ## How scoring works
 
@@ -91,6 +91,4 @@ npm test
 The app runs anywhere Next.js runs. For Vercel:
 
 - Set `DATABASE_URL` to the Neon connection string (the same database as `.env.local`, or a separate Neon branch for production). Run `npm run db:push` after any schema change.
-- Set `AUTO_SYNC_MINUTES=0` (Vercel Cron does the syncing there).
-- Add a Vercel Cron job that calls `/api/cron/sync`.
 - Set a strong `ADMIN_PASSWORD` and a random `SESSION_SECRET`.

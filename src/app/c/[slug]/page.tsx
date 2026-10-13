@@ -4,11 +4,11 @@ import type { Metadata } from "next";
 import { Activity, Award, Building2, Flame, Gift, Stethoscope, Star, Users, type LucideIcon } from "lucide-react";
 import { getCampaignBySlug, previousRanks, scoreCampaign } from "@/lib/score";
 import { isAdmin } from "@/lib/admin";
-import { AutoRefresh } from "@/components/auto-refresh";
 import { Countdown } from "@/components/countdown";
 import { Medal } from "@/components/medal";
 import { PublicShell } from "@/components/public-shell";
 import { ShareButton } from "@/components/share-button";
+import { SyncNow } from "@/components/sync-now";
 import { publicBaseUrl } from "@/lib/public-url";
 import { TeamAvatar } from "@/components/team-avatar";
 import { RankingBoard } from "./ranking-board";
@@ -18,6 +18,8 @@ import { RULE_TYPE_LABELS, type Rule, type Ruleset } from "@/lib/rules/schema";
 import type { ScoreResult, TeamScore } from "@/lib/rules/engine";
 
 export const dynamic = "force-dynamic";
+// "Sync now" runs a Zoho sync from this page; it can take a couple of minutes.
+export const maxDuration = 300;
 
 export async function generateMetadata({ params }: PageProps<"/c/[slug]">): Promise<Metadata> {
   const c = await getCampaignBySlug((await params).slug);
@@ -51,8 +53,8 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
       slug={slug}
       topRight={
         <>
-          <ShareButton slug={slug} pageUrl={pageUrl} />
-          <span className="hidden text-xs text-muted sm:inline">Updated {timeAgo(campaign.lastSyncedAt)}</span>
+          <SyncNow slug={slug} updated={timeAgo(campaign.lastSyncedAt)} />
+          <ShareButton slug={slug} pageUrl={pageUrl} updated={timeAgo(campaign.lastSyncedAt)} />
           <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${left >= 0 && campaign.status === "live" ? "bg-accent-soft text-accent" : "bg-surface text-muted"}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${left >= 0 && campaign.status === "live" ? "animate-pulse bg-accent" : "bg-muted"}`} />
             {campaign.status === "draft" ? "Draft preview" : left >= 0 && campaign.status === "live" ? "Live" : "Final"}
@@ -60,8 +62,6 @@ export default async function LeaderboardPage({ params }: PageProps<"/c/[slug]">
         </>
       }
     >
-      <AutoRefresh seconds={60} />
-
       <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Leaderboard</h1>
       <p className="mt-1 text-sm text-muted">
         {campaign.name} · {fmtRange(campaign.startDate, campaign.endDate)}
