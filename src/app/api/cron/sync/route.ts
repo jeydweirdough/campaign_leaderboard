@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { syncCampaign } from "@/lib/sync";
+import { pruneRateLimits } from "@/lib/rate-limit";
+import { syncWithLock } from "@/lib/sync";
 
 export const maxDuration = 300;
 
@@ -21,10 +22,11 @@ export async function GET(request: Request) {
   const results: Record<string, unknown> = {};
   for (const c of live) {
     try {
-      results[c.slug] = await syncCampaign(c.id);
+      results[c.slug] = (await syncWithLock(c.id)) ?? { skipped: "another sync was already running" };
     } catch (e) {
       results[c.slug] = { error: (e as Error).message };
     }
   }
+  await pruneRateLimits().catch((e) => console.error(`[cron] prune rate limits: ${(e as Error).message}`));
   return Response.json({ synced: live.length, results });
 }

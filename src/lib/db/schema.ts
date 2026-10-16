@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, doublePrecision, index, jsonb, pgTable, primaryKey, serial, text } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, jsonb, pgTable, primaryKey, serial, text } from "drizzle-orm/pg-core";
 
 // Dates are stored as ISO strings (YYYY-MM-DD / full ISO timestamps), matching what Zoho returns
 // and what the scoring engine compares, so no conversion is needed anywhere.
@@ -25,7 +25,7 @@ export const campaigns = pgTable("campaigns", {
   shareFontDisplay: text("share_font_display"),
   shareFontBody: text("share_font_body"),
   lastSyncedAt: text("last_synced_at"),
-  /** Set while a sync triggered from the public page runs, so two visitors can't start overlapping syncs. */
+  /** Set while any sync runs (public button, admin, or cron), so two can't overlap. */
   syncStartedAt: text("sync_started_at"),
   createdAt: text("created_at").notNull().default(now),
   updatedAt: text("updated_at").notNull().default(now),
@@ -196,6 +196,13 @@ export const syncLogs = pgTable("sync_logs", {
   finishedAt: text("finished_at"),
   ok: boolean("ok").notNull().default(false),
   summary: text("summary").notNull().default(""),
+});
+
+/** Fixed-window request counters, keyed like "sync:<ip>". Old rows are cleared by the cron sync. */
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  windowStart: text("window_start").notNull(),
+  count: integer("count").notNull().default(0),
 });
 
 /** Artwork uploaded from the admin, served by /api/campaign-image/[id]/[kind]. Kept out of `campaigns` so normal reads stay small. */

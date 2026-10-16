@@ -7,7 +7,7 @@ import { db, schema } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
 import { rulesetSchema } from "@/lib/rules/schema";
 import { RISE_3_RULESET } from "@/lib/rules/presets";
-import { syncCampaign, type SyncSummary } from "@/lib/sync";
+import { syncWithLock, type SyncSummary } from "@/lib/sync";
 import { searchItems } from "@/lib/zoho/client";
 import { DEFAULT_FONT, loadGoogleFont } from "@/lib/share-fonts";
 import { IMAGE_KINDS, IMAGE_MIMES, MAX_IMAGE_BYTES, uploadedImageUrl, type ImageKind } from "@/lib/campaign-images";
@@ -160,7 +160,8 @@ export async function saveRuleset(id: string, json: string): Promise<{ ok: true 
 export async function runSync(id: string): Promise<{ ok: true; summary: SyncSummary } | { ok: false; error: string }> {
   await requireAdmin();
   try {
-    const summary = await syncCampaign(id);
+    const summary = await syncWithLock(id);
+    if (!summary) return { ok: false, error: "A sync is already running for this campaign. Try again in a minute." };
     done(id);
     return { ok: true, summary };
   } catch (e) {

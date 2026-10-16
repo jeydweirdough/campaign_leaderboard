@@ -1,18 +1,24 @@
 "use server";
 
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { and, count, eq, gte } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db, schema } from "@/lib/db";
 import { isAdmin } from "@/lib/admin";
+import { clientIp, hit } from "@/lib/rate-limit";
 import { getCampaignBySlug } from "@/lib/score";
-import { syncCampaign } from "@/lib/sync";
+import { syncWithLock } from "@/lib/sync";
 
 /** A click within this long of the last sync just shows the saved data instead of calling Zoho again. */
 const COOLDOWN_MS = 2 * 60_000;
-/** A lock older than this belongs to a sync that crashed or timed out, so it can be taken over. */
-const STALE_LOCK_MS = 6 * 60_000;
+/** Each visitor (by IP) gets this many "Sync now" clicks per window, across all campaigns. */
+const CLICKS_PER_IP = 5;
+const CLICK_WINDOW_MS = 10 * 60_000;
+/** At most this many Zoho syncs per campaign per hour (cron and admin syncs count too), to protect the Zoho API quota. */
+const SYNCS_PER_HOUR = 10;
 
 export type PublicSyncResult = { ok: true; status: "synced" | "fresh" | "busy" } | { ok: false; error: string };
+
+const minutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 
 /** "Sync now" on the public leaderboard: pulls the latest invoices from Zoho. One sync runs at a time per campaign. */
 export async function syncFromLeaderboard(slug: string): Promise<PublicSyncResult> {
@@ -20,31 +26,25 @@ export async function syncFromLeaderboard(slug: string): Promise<PublicSyncResul
   if (!campaign || (campaign.status === "draft" && !(await isAdmin()))) return { ok: false, error: "Leaderboard not found." };
   if (campaign.status === "closed") return { ok: false, error: "This campaign has ended. The results are final." };
 
+  const limit = await hit(`sync:${await clientIp()}`, CLICKS_PER_IP, CLICK_WINDOW_MS);
+  if (!limit.ok) return { ok: false, error: `Too many sync requests. Try again in ${minutes(limit.retryAfterMs)} min.` };
+
   const now = Date.now();
   if (campaign.lastSyncedAt && now - Date.parse(campaign.lastSyncedAt) < COOLDOWN_MS) return { ok: true, status: "fresh" };
 
-  // Take the lock in a single UPDATE so two visitors clicking together can't both start a sync.
-  const startedAt = new Date(now).toISOString();
-  const claimed = await db
-    .update(schema.campaigns)
-    .set({ syncStartedAt: startedAt })
-    .where(
-      and(
-        eq(schema.campaigns.id, campaign.id),
-        or(isNull(schema.campaigns.syncStartedAt), lt(schema.campaigns.syncStartedAt, new Date(now - STALE_LOCK_MS).toISOString())),
-      ),
-    )
-    .returning({ id: schema.campaigns.id });
-  if (!claimed.length) return { ok: true, status: "busy" };
+  const [recent] = await db
+    .select({ n: count() })
+    .from(schema.syncLogs)
+    .where(and(eq(schema.syncLogs.campaignId, campaign.id), gte(schema.syncLogs.startedAt, new Date(now - 3_600_000).toISOString())));
+  if (recent.n >= SYNCS_PER_HOUR) return { ok: false, error: "The leaderboard has been synced a lot this hour. Please try again later." };
 
   try {
-    await syncCampaign(campaign.id);
-    return { ok: true, status: "synced" };
+    const summary = await syncWithLock(campaign.id);
+    return { ok: true, status: summary ? "synced" : "busy" };
   } catch (e) {
     console.error(`[public-sync] ${slug}: ${(e as Error).message}`);
     return { ok: false, error: "Couldn't reach Zoho right now. Please try again in a few minutes." };
   } finally {
-    await db.update(schema.campaigns).set({ syncStartedAt: null }).where(eq(schema.campaigns.id, campaign.id));
     revalidatePath(`/c/${slug}`, "layout");
   }
 }

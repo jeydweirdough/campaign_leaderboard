@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, lte, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, isNull, lt, or } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
 import { parseRuleset } from "@/lib/rules/schema";
 import { doctorKey } from "@/lib/rules/engine";
@@ -19,6 +19,34 @@ export type SyncSummary = {
   customersChecked: number;
   errors: string[];
 };
+
+/** A lock older than this belongs to a sync that crashed or timed out, so it can be taken over. */
+const STALE_LOCK_MS = 6 * 60_000;
+
+/**
+ * Runs syncCampaign while holding the campaign's sync lock, so the public button, the admin
+ * button and the cron job never run overlapping syncs. Returns null if another sync holds the lock.
+ */
+export async function syncWithLock(campaignId: string): Promise<SyncSummary | null> {
+  const now = Date.now();
+  // Take the lock in a single UPDATE so two callers arriving together can't both start a sync.
+  const claimed = await db
+    .update(schema.campaigns)
+    .set({ syncStartedAt: new Date(now).toISOString() })
+    .where(
+      and(
+        eq(schema.campaigns.id, campaignId),
+        or(isNull(schema.campaigns.syncStartedAt), lt(schema.campaigns.syncStartedAt, new Date(now - STALE_LOCK_MS).toISOString())),
+      ),
+    )
+    .returning({ id: schema.campaigns.id });
+  if (!claimed.length) return null;
+  try {
+    return await syncCampaign(campaignId);
+  } finally {
+    await db.update(schema.campaigns).set({ syncStartedAt: null }).where(eq(schema.campaigns.id, campaignId));
+  }
+}
 
 const today = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10); // Asia/Manila
 

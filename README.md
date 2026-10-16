@@ -38,7 +38,7 @@ Generate a refresh token, then set `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET` and `Z
 
 There is no automatic sync. The data changes only when someone runs one of these:
 
-- **Sync now** on the public leaderboard or in the share dialog. Anyone viewing the page can click it. Only one sync runs at a time per campaign, a click within 2 minutes of the last sync just reloads the page, and closed campaigns can't be synced.
+- **Sync now** on the public leaderboard or in the share dialog. Anyone viewing the page can click it. Only one sync runs at a time per campaign (shared with the admin button and cron), a click within 2 minutes of the last sync just reloads the page, and closed campaigns can't be synced. Rate limits: each visitor (by IP) gets 5 clicks per 10 minutes, and a campaign syncs from Zoho at most 10 times per hour (cron and admin syncs count toward that). The limits are constants at the top of `src/app/c/[slug]/actions.ts`.
 - **Command line:** `npm run sync`, or `npm run sync -- rise-3` for one campaign. This doesn't need the dev server, so prefer it on low-memory machines.
 - Click **Sync from Zoho now** on a campaign's admin Overview tab.
 - **Scheduled:** Vercel Cron (`vercel.json`) calls `GET /api/cron/sync` at 6:00 AM and 3:00 PM Philippine time (22:00 and 07:00 UTC) to sync every live Zoho campaign. Vercel sends `Authorization: Bearer $CRON_SECRET` automatically, so `CRON_SECRET` must be set in the Vercel project's environment variables. You can also call the endpoint yourself with that header.
