@@ -41,7 +41,7 @@ There is no automatic sync. The data changes only when someone runs one of these
 - **Sync now** on the public leaderboard or in the share dialog. Anyone viewing the page can click it. Only one sync runs at a time per campaign, a click within 2 minutes of the last sync just reloads the page, and closed campaigns can't be synced.
 - **Command line:** `npm run sync`, or `npm run sync -- rise-3` for one campaign. This doesn't need the dev server, so prefer it on low-memory machines.
 - Click **Sync from Zoho now** on a campaign's admin Overview tab.
-- `GET /api/cron/sync` with the header `Authorization: Bearer $CRON_SECRET` syncs every live Zoho campaign, for scripts or an external scheduler if you ever want one.
+- **Scheduled:** Vercel Cron (`vercel.json`) calls `GET /api/cron/sync` at 6:00 AM and 3:00 PM Philippine time (22:00 and 07:00 UTC) to sync every live Zoho campaign. Vercel sends `Authorization: Bearer $CRON_SECRET` automatically, so `CRON_SECRET` must be set in the Vercel project's environment variables. You can also call the endpoint yourself with that header.
 
 ## How scoring works
 
