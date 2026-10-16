@@ -20,8 +20,20 @@ export type PublicSyncResult = { ok: true; status: "synced" | "fresh" | "busy" }
 
 const minutes = (ms: number) => Math.max(1, Math.ceil(ms / 60_000));
 
-/** "Sync now" on the public leaderboard: pulls the latest invoices from Zoho. One sync runs at a time per campaign. */
+/**
+ * "Sync now" on the public leaderboard: pulls the latest invoices from Zoho. One sync runs at a time per campaign.
+ * Never throws: an error escaping a server action replaces the whole page with Next's error screen.
+ */
 export async function syncFromLeaderboard(slug: string): Promise<PublicSyncResult> {
+  try {
+    return await sync(slug);
+  } catch (e) {
+    console.error(`[public-sync] ${slug}: ${(e as Error).message}`);
+    return { ok: false, error: "Sync isn't available right now. Please try again later." };
+  }
+}
+
+async function sync(slug: string): Promise<PublicSyncResult> {
   const campaign = await getCampaignBySlug(slug);
   if (!campaign || (campaign.status === "draft" && !(await isAdmin()))) return { ok: false, error: "Leaderboard not found." };
   if (campaign.status === "closed") return { ok: false, error: "This campaign has ended. The results are final." };

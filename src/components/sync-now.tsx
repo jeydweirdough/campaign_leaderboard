@@ -20,7 +20,8 @@ export function useSyncNow(slug: string, onDone?: () => void) {
   const sync = () =>
     start(async () => {
       setMsg(null);
-      const res = await syncFromLeaderboard(slug);
+      // A rejected server action (e.g. the network dropped) would otherwise replace the page with the error screen.
+      const res = await syncFromLeaderboard(slug).catch(() => ({ ok: false as const, error: "Couldn't sync. Check your connection and try again." }));
       setMsg(res.ok ? { ok: true, text: MESSAGES[res.status] } : { ok: false, text: res.error });
       router.refresh();
       onDone?.();
